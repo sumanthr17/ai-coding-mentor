@@ -115,3 +115,23 @@ test("treats HTTP 401 without a JSON provider error as an authentication failure
   assert.deepEqual(diagnostics, [{ requestId: diagnostics[0]?.requestId, httpStatus: 401 }]);
   assert.match(diagnostics[0]?.requestId ?? "", /^[0-9a-f-]{36}$/i);
 });
+
+test("writes the default diagnostic to the server console without sensitive request data", async () => {
+  const warnings: unknown[][] = [];
+  const originalWarn = console.warn;
+  console.warn = (...args: unknown[]) => warnings.push(args);
+
+  try {
+    const fetchFn: typeof fetch = async () => new Response(JSON.stringify({ status: "failed", error: "E003: invalid access_token" }), { status: 403 });
+    const service = new OneCompilerExecutionService({ apiKey: "test-key", fetchFn });
+
+    await assert.rejects(service.execute(request));
+  } finally {
+    console.warn = originalWarn;
+  }
+
+  assert.equal(warnings.length, 1);
+  assert.equal(warnings[0]?.[0], "OneCompiler provider request failed.");
+  assert.deepEqual(Object.keys(warnings[0]?.[1] as object).sort(), ["httpStatus", "providerErrorCode", "requestId"]);
+  assert.doesNotMatch(JSON.stringify(warnings[0]), /test-key|int main|X-API-Key/i);
+});
